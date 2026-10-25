@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Révision de citations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&display=swap">
+<script src="xlsx.full.min.js"></script>
+<style>
+[hidden] { display: none !important; }
+html { color-scheme: light; }
+body { margin: 0; }
+/* Layout: one narrow column, three tabs in a bottom bar (Ajouter, Réviser, Compléter); the quote card is the focal point.
+   Palette: primary #6D87C9 (fills), outline #345995, white page ground, outline 2 #F7996E (misses, retries). */
+:root {
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --ink: #1B2744;
+  --muted: #4D5A7A;
+  --outline: #345995;
+  --line: #D6DDEE;
+  --accent: #345995;
+  --accent-soft: #DDE4F5;
+  --primary: #6D87C9;
+  --primary-ink: #0F1A33;
+  --alt: #F7996E;
+  --alt-bg: #FCE5DA;
+  --alt-ink: #8A3512;
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151D33; --surface: #1F2A47; --ink: #F7F8FC; --muted: #B7C0D8; --outline: #4D70B8; --line: #2E3C61;
+    --accent: #A9BCEB; --accent-soft: #2A3B6B; --alt-bg: #3B2830; --alt-ink: #F8B896;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151D33; --surface: #1F2A47; --ink: #F7F8FC; --muted: #B7C0D8; --outline: #4D70B8; --line: #2E3C61;
+  --accent: #A9BCEB; --accent-soft: #2A3B6B; --alt-bg: #3B2830; --alt-ink: #F8B896;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: 20px 120px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-family: var(--font-display); font-weight: 500; font-size: 1.9rem; line-height: 1.1; margin: 0; text-wrap: balance; }
+h2 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0; }
+p { margin: 0; }
+.meta { color: var(--muted); font-size: .9rem; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.panel { background: var(--surface); border: 1.5px solid var(--outline); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.btn { min-height: 48px; padding: 0 18px; border-radius: 12px; border: 1.5px solid var(--outline); background: var(--surface); font-weight: 600; }
+.btn.primary { background: var(--primary); color: var(--primary-ink); }
+.btn.danger { color: var(--alt-ink); border-color: var(--alt); background: var(--alt-bg); }
+.btn.danger.solid { background: var(--alt); color: #2A1208; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > .btn { flex: 1 1 140px; }
+
+.drop { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 22px 14px; border: 2px dashed var(--outline); border-radius: 14px; background: var(--accent-soft); color: var(--accent); font-weight: 600; cursor: pointer; }
+.drop:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.drop small { color: var(--muted); font-weight: 400; }
+.sr { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.msg { font-size: .92rem; min-height: 1.3em; }
+.msg.ok { color: var(--accent); font-weight: 500; } .msg.err { color: var(--alt-ink); font-weight: 500; }
+
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); font-weight: 500; }
+input[type=text], textarea { width: 100%; background: var(--bg); border: 1.5px solid var(--outline); border-radius: 10px; padding: 10px 12px; color: var(--ink); font-size: 16px; }
+textarea { min-height: 88px; resize: vertical; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--surface); border: 1.5px solid var(--outline); border-radius: 14px; padding: 12px; }
+.stat b { display: block; font-family: var(--font-display); font-size: 1.7rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat span { font-size: .8rem; color: var(--muted); }
+
+.list { display: flex; flex-direction: column; }
+.item { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; padding-top: 0; }
+.item .t { flex: 1; min-width: 0; }
+.item .q { font-family: var(--font-display); font-size: 1.02rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.item .s { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+.icon-btn { width: 44px; height: 44px; flex: none; border: 0; background: transparent; color: var(--muted); border-radius: 10px; display: grid; place-items: center; }
+.empty { text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 8px 0; color: var(--muted); }
+
+.bar { height: 3px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--primary); border-radius: 99px; transition: width .3s; }
+.card { background: var(--surface); border: 1.5px solid var(--outline); border-radius: 22px; padding: 22px 20px 20px; min-height: 280px; display: flex; flex-direction: column; gap: 18px; animation: in .25s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.chip { align-self: flex-start; font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 4px 10px; border-radius: 99px; }
+.chip.retry { color: var(--alt-ink); background: var(--alt-bg); border: 1px solid var(--alt); }
+.quote { font-family: var(--font-display); font-style: italic; font-size: clamp(1.4rem, 5.6vw, 2rem); line-height: 1.32; margin: auto 0; overflow-wrap: break-word; text-wrap: pretty; }
+.quote .dots { color: var(--alt); font-style: normal; }
+.quote .miss { background: var(--alt-bg); color: var(--alt-ink); border-bottom: 2px solid var(--alt); border-radius: 3px; padding: 0 2px; }
+.quote .head { color: var(--accent); }
+.source { min-height: 3.2em; display: flex; flex-direction: column; gap: 2px; }
+.source .a { font-weight: 600; }
+.source .w { font-family: var(--font-display); font-style: italic; color: var(--muted); }
+.reveal { align-self: flex-start; min-height: 44px; background: transparent; border: 0; color: var(--accent); font-weight: 600; padding: 0; text-decoration: underline; text-underline-offset: 4px; }
+.answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.answers button, .next { min-height: 68px; border-radius: 16px; font-weight: 600; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 10px; }
+.answers .no { background: var(--alt-bg); color: var(--alt-ink); border: 2px solid var(--alt); }
+.answers .yes, .next { background: var(--primary); color: var(--primary-ink); border: 2px solid var(--outline); }
+.next { width: 100%; }
+.verdict { font-weight: 600; }
+.verdict.ok { color: var(--accent); } .verdict.ko { color: var(--alt-ink); }
+.typed { font-size: .9rem; color: var(--muted); overflow-wrap: anywhere; }
+
+nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface); border-top: 1.5px solid var(--outline);
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.navrow { max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 6px; }
+.tabs { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.info { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 12px; background: transparent; color: var(--muted); }
+.info[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+nav button { min-height: 52px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: .78rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+nav button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.gauge { background: var(--surface); border: 1.5px solid var(--outline); border-radius: 16px; padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+.gauge-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; font-size: .9rem; }
+.gauge-top b { font-family: var(--font-display); font-size: 1.6rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.track { position: relative; height: 14px; border-radius: 99px; background: var(--line); margin: 4px 0 0; }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--primary); transition: width .3s; }
+.tick { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--outline); opacity: .5; }
+.tick.on { background: var(--alt); opacity: 1; }
+.labels { position: relative; height: 1.1em; font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.labels span { position: absolute; top: 0; transform: translateX(-50%); }
+.presets { display: flex; flex-direction: column; gap: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset { min-height: 40px; padding: 6px 12px; border-radius: 99px; border: 1.5px solid var(--outline); background: var(--accent-soft); color: var(--accent); font-size: .85rem; font-weight: 600; text-align: left; }
+nav button { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.credits { align-items: flex-start; gap: 8px; }
+.credits .lab { font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.credits .who { font-family: var(--font-display); font-size: 2.1rem; line-height: 1.1; margin-bottom: 8px; }
+.linkbtn { display: flex; align-items: center; justify-content: center; text-decoration: none; align-self: stretch; }
+.quote.m { font-size: clamp(1.2rem, 4.8vw, 1.5rem); }
+.quote.s { font-size: clamp(1.02rem, 4.2vw, 1.2rem); line-height: 1.38; }
+#mIdea { min-height: 64px; }
+.idea { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+.idea .lab { font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.idea p { font-size: 1rem; }
+.answers, .next { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 4; }
+.answers { background: var(--bg); padding: 8px 0; }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; } .bar span, .fill { transition: none; } }
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <div id="gauge"></div>
+  <section id="view-add" hidden>
+    <div class="wrap">
+      <h1>Ajouter des citations</h1>
+      <div class="panel">
+        <h2>Importer un fichier Excel</h2>
+        <label class="drop" for="file">
+          <span>Choisir un fichier .xlsx, .xls ou .csv</span>
+          <small>Colonnes : Citation, Auteur, Œuvre, Idée (les trois dernières sont facultatives). Première feuille uniquement.</small>
+          <input class="sr" id="file" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+        </label>
+        <p class="msg" id="importMsg" role="status"></p>
+      </div>
+      <form class="panel" id="manual">
+        <h2>Ou ajouter à la main</h2>
+        <label class="f" for="mText">Citation
+          <textarea id="mText" required></textarea>
+        </label>
+        <label class="f" for="mIdea">Idée associée (facultatif)
+          <textarea id="mIdea"></textarea>
+        </label>
+        <div class="presets"><span class="meta">Préremplir l’auteur et l’œuvre :</span><div class="chips" id="presets"></div></div>
+        <div class="two">
+          <label class="f" for="mAuthor">Auteur <input type="text" id="mAuthor" autocomplete="off"></label>
+          <label class="f" for="mWork">Œuvre <input type="text" id="mWork" autocomplete="off"></label>
+        </div>
+        <button class="btn primary" type="submit">Ajouter la citation</button>
+      </form>
+      <div class="stats" id="stats"></div>
+      <div class="panel">
+        <h2 id="listTitle">Mes citations</h2>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="panel" id="danger"></div>
+    </div>
+  </section>
+  <section id="view-review" hidden></section>
+  <section id="view-complete" hidden></section>
+  <section id="view-credits" hidden></section>
+</main>
+
+<nav aria-label="Navigation">
+  <div class="navrow">
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-add" data-go="add" aria-selected="false">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ajouter
+    </button>
+    <button role="tab" id="tab-complete" data-go="complete" aria-selected="false">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>Compléter
+    </button>
+    <button role="tab" id="tab-review" data-go="review" aria-selected="false">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M8 10h8M8 14h5"/></svg>Réviser
+    </button>
+  </div>
+  <button type="button" class="info" id="btn-credits" data-go="credits" aria-label="Crédits" aria-pressed="false">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+  </button>
+  </div>
+</nav>
+
+<script>
+(function () {
+  var KEY = 'citations-v1';
+  var DAYS = [0, 1, 3, 7, 21];
+  var PRESETS = [
+    ['Émile Zola', 'L’Œuvre'],
+    ['Virginia Woolf', 'Un lieu à soi'],
+    ['Platon', 'Ion'],
+    ['Platon', 'La République (livre X)']
+  ];
+  var cards = [], confirming = null;
+  function mk(k) { return { k: k, queue: [], failed: {}, stats: { known: 0, unknown: 0 }, total: 0, started: false, revealed: false }; }
+  var R = mk(''), C = mk('c');
+  var cResult = null, rResult = null;
+
+  function $(s) { return document.querySelector(s); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/œ/g, 'oe').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function byId(id) { for (var i = 0; i < cards.length; i++) if (cards[i].id === id) return cards[i]; return null; }
+  function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function load() { try { var r = localStorage.getItem(KEY); if (r) { var d = JSON.parse(r); if (Array.isArray(d)) cards = d; } } catch (e) {} }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(cards)); } catch (e) {} }
+  function clean(t) { return String(t == null ? '' : t).replace(/^[\s«"“]+|[\s»"”]+$/g, '').replace(/\s+/g, ' ').trim(); }
+  function eligible(m, c) { return m === R || c.text.split(/\s+/).length > 3; }
+
+  function addCards(list) {
+    var seen = {}, added = 0, dup = 0, merged = 0, ids = [];
+    cards.forEach(function (c) { seen[norm(c.text)] = c; });
+    list.forEach(function (r) {
+      var text = clean(r.text);
+      if (!text) return;
+      var k = norm(text), author = String(r.author || '').trim(), work = String(r.work || '').trim(), idea = String(r.idea || '').trim();
+      if (seen[k]) {
+        var ex = seen[k], ch = false;
+        if (!ex.idea && idea) { ex.idea = idea; ch = true; }
+        if (!ex.author && author) { ex.author = author; ch = true; }
+        if (!ex.work && work) { ex.work = work; ch = true; }
+        if (ch) merged++; else dup++;
+        return;
+      }
+      added++;
+      var c = { id: uid(), text: text, author: author, work: work, idea: idea, box: 0, due: 0, seen: false, cbox: 0, cdue: 0, cseen: false };
+      seen[k] = c; cards.push(c); ids.push(c.id);
+    });
+    save();
+    [R, C].forEach(function (m) {
+      if (!m.started) return;
+      ids.forEach(function (id) {
+        if (!eligible(m, byId(id))) return;
+        m.queue.splice(Math.floor(Math.random() * (m.queue.length + 1)), 0, id); m.total++;
+      });
+    });
+    return { added: added, dup: dup, merged: merged };
+  }
+
+  function parseRows(rows) {
+    rows = rows.filter(function (r) { return r && r.some(function (c) { return String(c == null ? '' : c).trim() !== ''; }); });
+    if (!rows.length) return [];
+    var head = rows[0].map(norm);
+    function find(names) { for (var i = 0; i < head.length; i++) for (var j = 0; j < names.length; j++) if (head[i] === names[j] || head[i].indexOf(names[j]) === 0) return i; return -1; }
+    var ci = find(['citation', 'texte', 'quote', 'extrait']);
+    var ai = find(['auteur', 'author', 'ecrivain']);
+    var wi = find(['oeuvre', 'livre', 'titre', 'ouvrage', 'work', 'source']);
+    var ii = find(['idee', 'idea', 'explication', 'commentaire', 'analyse']);
+    var start = 0;
+    if (ci >= 0) { start = 1; } else { ci = 0; ai = 1; wi = 2; ii = 3; }
+    var out = [];
+    for (var i = start; i < rows.length; i++) {
+      var r = rows[i];
+      out.push({ text: r[ci], author: ai >= 0 ? r[ai] : '', work: wi >= 0 ? r[wi] : '', idea: ii >= 0 ? r[ii] : '' });
+    }
+    return out;
+  }
+
+  function setMsg(t, kind) { var m = $('#importMsg'); m.textContent = t; m.className = 'msg ' + (kind || ''); }
+
+  $('#file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    if (typeof XLSX === 'undefined') { setMsg('Le lecteur Excel ne s’est pas chargé. Vérifiez la connexion puis rechargez la page.', 'err'); return; }
+    setMsg('Lecture de « ' + f.name + ' »…');
+    var isCsv = /\.csv$/i.test(f.name);
+    var p = isCsv ? f.text() : f.arrayBuffer();
+    p.then(function (data) {
+      var wb = XLSX.read(data, { type: isCsv ? 'string' : 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      var res = addCards(parseRows(rows));
+      if (!res.added && !res.dup && !res.merged) setMsg('Aucune citation trouvée. Mettez les citations dans la première colonne.', 'err');
+      else setMsg(res.added + ' citation' + (res.added > 1 ? 's ajoutées' : ' ajoutée') + (res.dup ? ' · ' + res.dup + ' doublon' + (res.dup > 1 ? 's ignorés' : ' ignoré') : '') + (res.merged ? ' · ' + res.merged + ' complétée' + (res.merged > 1 ? 's' : '') : '') + '.', 'ok');
+      renderAdd();
+    }).catch(function () { setMsg('Ce fichier ne peut pas être lu. Essayez un fichier .xlsx ou .csv.', 'err'); });
+    e.target.value = '';
+  });
+
+  $('#manual').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var res = addCards([{ text: $('#mText').value, author: $('#mAuthor').value, work: $('#mWork').value, idea: $('#mIdea').value }]);
+    setMsg(res.added ? 'Citation ajoutée.' : (res.merged ? 'Citation existante complétée.' : 'Cette citation existe déjà.'), (res.added || res.merged) ? 'ok' : 'err');
+    if (res.added || res.merged) { $('#mText').value = ''; $('#mAuthor').value = ''; $('#mWork').value = ''; $('#mIdea').value = ''; }
+    renderAdd();
+  });
+
+  /* ---------- jauge du jour ---------- */
+  var DKEY = 'citations-daily-v1', daily = null;
+  var TIERS = [[5, 'Lancé'], [10, 'Régulier'], [20, 'Sérieux'], [35, 'Assidu'], [50, 'Maître']];
+  function today() { try { return new Date().toLocaleDateString('en-CA'); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+  function getDaily() {
+    var t = today();
+    if (!daily) { try { daily = JSON.parse(localStorage.getItem(DKEY)); } catch (e) {} }
+    if (!daily || daily.d !== t || !Array.isArray(daily.ids)) daily = { d: t, ids: [] };
+    return daily;
+  }
+  function logDaily(id) {
+    var d = getDaily();
+    if (d.ids.indexOf(id) < 0) { d.ids.push(id); try { localStorage.setItem(DKEY, JSON.stringify(d)); } catch (e) {} }
+    renderGauge();
+  }
+  function renderGauge() {
+    var n = getDaily().ids.length, max = TIERS[TIERS.length - 1][0], reached = null, next = null;
+    TIERS.forEach(function (t) { if (n >= t[0]) reached = t; else if (!next) next = t; });
+    var line = next ? (reached ? 'Palier ' + reached[1] + ' atteint · encore ' + (next[0] - n) + ' pour ' + next[1] : 'Encore ' + (next[0] - n) + ' pour le palier ' + next[1]) : 'Palier maximum atteint : ' + reached[1];
+    var ticks = TIERS.map(function (t) { return '<i class="tick' + (n >= t[0] ? ' on' : '') + '" style="left:' + (t[0] / max * 100) + '%"></i>'; }).join('');
+    var labs = TIERS.map(function (t, i) { return '<span style="left:' + (t[0] / max * 100) + '%' + (i === TIERS.length - 1 ? ';transform:translateX(-100%)' : '') + '">' + t[0] + '</span>'; }).join('');
+    try { if (window.AndroidBridge) AndroidBridge.setCount(n); } catch (e) {}
+    $('#gauge').innerHTML = '<div class="gauge" role="group" aria-label="Objectif du jour">' +
+      '<div class="gauge-top"><span><b>' + n + '</b> révisée' + (n > 1 ? 's' : '') + ' aujourd’hui</span><span class="meta">Remise à zéro à minuit</span></div>' +
+      '<div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="' + max + '" aria-valuenow="' + Math.min(n, max) + '" aria-label="Citations révisées aujourd’hui"><div class="fill" style="width:' + Math.min(100, n / max * 100) + '%"></div>' + ticks + '</div>' +
+      '<div class="labels" aria-hidden="true">' + labs + '</div>' +
+      '<p class="meta">' + line + '</p></div>';
+  }
+
+  /* ---------- confettis ---------- */
+  function qc(t) { var n = String(t).length; return 'quote' + (n > 190 ? ' s' : n > 95 ? ' m' : ''); }
+  function celebrate(m) { if (m.total > 0 && !m.celebrated) { m.celebrated = true; confetti(); } }
+  function confetti() {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var W = window.innerWidth, H = window.innerHeight, dpr = window.devicePixelRatio || 1;
+    var cv = document.createElement('canvas');
+    cv.setAttribute('aria-hidden', 'true');
+    cv.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:50';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    document.body.appendChild(cv);
+    var ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    var colors = ['#6D87C9', '#345995', '#F7996E', '#FFC9A8', '#9DB4EE', '#C9D5F2'], ps = [], i;
+    for (i = 0; i < 170; i++) {
+      var left = i % 2 === 0;
+      ps.push({
+        x: left ? 0 : W, y: H * 0.75,
+        vx: (left ? 1 : -1) * (3 + Math.random() * 8), vy: -(9 + Math.random() * 12),
+        w: 6 + Math.random() * 6, h: 3 + Math.random() * 5,
+        r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 0.4, c: colors[i % colors.length]
+      });
+    }
+    var t0 = Date.now();
+    (function frame() {
+      var t = Date.now() - t0;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = Math.max(0, Math.min(1, 1 - (t - 2200) / 1300));
+      ps.forEach(function (q) {
+        q.vy += 0.35; q.vx *= 0.99; q.x += q.vx; q.y += q.vy; q.r += q.vr;
+        ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.r);
+        ctx.fillStyle = q.c; ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
+        ctx.restore();
+      });
+      if (t < 3500) requestAnimationFrame(frame); else cv.remove();
+    })();
+  }
+
+  /* ---------- séances (communes à Réviser et Compléter) ---------- */
+  function startSession(m, all) {
+    var now = Date.now();
+    var pool = cards.filter(function (c) { return eligible(m, c) && (all || (c[m.k + 'due'] || 0) <= now); });
+    m.queue = shuffle(pool.map(function (c) { return c.id; }));
+    m.failed = {}; m.stats = { known: 0, unknown: 0 };
+    m.total = m.queue.length; m.started = true; m.revealed = false; m.celebrated = false;
+  }
+
+  function applyAnswer(m, id, known) {
+    var c = byId(id);
+    if (!c) return;
+    var bk = m.k + 'box';
+    if (known) {
+      c[bk] = m.failed[id] ? 1 : Math.min((c[bk] || 0) + 1, 4);
+      c[m.k + 'due'] = Date.now() + DAYS[c[bk]] * 864e5;
+      m.stats.known++;
+    } else {
+      c[bk] = 0; c[m.k + 'due'] = Date.now(); m.failed[id] = 1; m.stats.unknown++;
+      m.queue.splice(Math.min(m.queue.length, 3 + Math.floor(Math.random() * 3)), 0, id);
+    }
+    c[m.k + 'seen'] = true; save(); logDaily(id);
+  }
+
+  function answerReview(known) {
+    var id = R.queue.shift(), c = byId(id);
+    if (!c) { renderReview(); return; }
+    applyAnswer(R, id, known);
+    R.revealed = false;
+    rResult = c.idea ? { c: c, known: known } : null;
+    renderReview();
+  }
+
+  /* ---------- réponse de « Compléter » ---------- */
+  function answerComplete(known) {
+    var id = C.queue.shift(), c = byId(id);
+    if (!c) { renderComplete(); return; }
+    var toks = c.text.split(/\s+/);
+    applyAnswer(C, id, known);
+    cResult = { c: c, head: toks.slice(0, 3), rest: toks.slice(3), known: known };
+    renderComplete();
+  }
+
+  /* ---------- rendu : onglet Ajouter ---------- */
+  function renderStats() {
+    var total = cards.length;
+    var mastered = cards.filter(function (c) { return c.box >= 3; }).length;
+    var retry = cards.filter(function (c) { return c.seen && c.box === 0; }).length;
+    $('#stats').innerHTML = [[total, 'au total'], [mastered, 'maîtrisées'], [retry, 'à revoir']].map(function (s) { return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('');
+  }
+
+  function renderList() {
+    $('#listTitle').textContent = 'Mes citations (' + cards.length + ')';
+    if (!cards.length) {
+      $('#list').innerHTML = '<div class="empty"><p>Aucune citation pour le moment. Importez un fichier Excel ou ajoutez une citation à la main.</p></div>';
+      return;
+    }
+    $('#list').innerHTML = cards.slice().reverse().map(function (c) {
+      var src = [c.author, c.work].filter(Boolean).map(esc).join(' · ');
+      return '<div class="item"><div class="t"><div class="q">« ' + esc(c.text) + ' »</div>' + (src ? '<div class="s">' + src + '</div>' : '') + '</div>' +
+        '<button class="icon-btn" data-act="del" data-id="' + c.id + '" aria-label="Supprimer cette citation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg></button></div>';
+    }).join('');
+  }
+
+  function renderDanger() {
+    var d = $('#danger');
+    if (!cards.length) { d.hidden = true; return; }
+    d.hidden = false;
+    var h = '<h2>Gérer</h2>';
+    if (confirming === 'reset') h += '<p class="meta">Toutes les citations redeviennent nouvelles, dans Réviser et dans Compléter.</p><div class="row"><button class="btn danger solid" data-act="reset-ok">Confirmer</button><button class="btn" data-act="cancel">Annuler</button></div>';
+    else if (confirming === 'wipe') h += '<p class="meta">Les ' + cards.length + ' citations seront supprimées.</p><div class="row"><button class="btn danger solid" data-act="wipe-ok">Tout supprimer</button><button class="btn" data-act="cancel">Annuler</button></div>';
+    else h += '<div class="row"><button class="btn" data-act="reset">Remettre la progression à zéro</button><button class="btn danger" data-act="wipe">Tout supprimer</button></div>';
+    d.innerHTML = h;
+  }
+
+  function renderAdd() { renderStats(); renderList(); renderDanger(); }
+
+  /* ---------- rendu : parties communes ---------- */
+  function fmtDate(t) { try { return new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { return ''; } }
+  function progress(m) {
+    var pct = m.total ? Math.round(100 * m.stats.known / m.total) : 0;
+    return '<div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
+      '<p class="meta" style="margin-top:6px">' + m.queue.length + ' à voir · ' + m.stats.known + ' sur ' + m.total + ' réussies</p></div>';
+  }
+  function chipFor(c, m) {
+    var box = c[m.k + 'box'] || 0;
+    if (!c[m.k + 'seen']) return '<span class="chip">Nouvelle</span>';
+    return box === 0 ? '<span class="chip retry">À revoir</span>' : '<span class="chip">Niveau ' + box + ' sur 4</span>';
+  }
+  function sourceHtml(c, revealed, act) {
+    if (!(c.author || c.work)) return '<div class="source"></div>';
+    return '<div class="source">' + (revealed ?
+      (c.author ? '<span class="a">' + esc(c.author) + '</span>' : '') + (c.work ? '<span class="w">' + esc(c.work) + '</span>' : '') :
+      '<button class="reveal" data-act="' + act + '">Afficher l’auteur et l’œuvre</button>') + '</div>';
+  }
+  function doneView(m, againAct, emptyText) {
+    var h = '<h1>' + (m.total ? 'Séance terminée' : 'Rien à réviser') + '</h1>';
+    if (m.total) {
+      h += '<div class="stats" style="grid-template-columns:1fr 1fr"><div class="stat"><b>' + m.stats.known + '</b><span>citations réussies</span></div><div class="stat"><b>' + m.stats.unknown + '</b><span>retours pour erreur</span></div></div>';
+    } else {
+      var pool = cards.filter(function (x) { return eligible(m, x); });
+      if (!pool.length) h += '<p class="meta">' + emptyText + '</p>';
+      else h += '<p class="meta">Tout est programmé pour plus tard. Prochaine séance : ' + esc(fmtDate(Math.min.apply(null, pool.map(function (x) { return x[m.k + 'due'] || 0; })))) + '.</p>';
+    }
+    var again = cards.some(function (x) { return eligible(m, x); }) ? '<button class="btn primary" data-act="' + againAct + '">Tout refaire maintenant</button>' : '';
+    return h + '<div class="row">' + again + '<button class="btn" data-go="add">Ajouter des citations</button></div>';
+  }
+
+  /* ---------- rendu : onglet Réviser ---------- */
+  function renderReview() {
+    var el = $('#view-review');
+    R.queue = R.queue.filter(function (id) { return byId(id); });
+    var h = '<div class="wrap">';
+    if (!cards.length) {
+      h += '<h1>Réviser</h1><div class="panel"><div class="empty"><p>Ajoutez d’abord des citations, puis revenez ici pour les réviser.</p><button class="btn primary" data-go="add">Ajouter des citations</button></div></div></div>';
+      el.innerHTML = h; return;
+    }
+    if (rResult) {
+      var rc = rResult.c;
+      h += '<h1>Réviser</h1>' + progress(R) +
+        '<div class="card">' + chipFor(rc, R) +
+        '<p class="verdict ' + (rResult.known ? 'ok' : 'ko') + '" role="status">' + (rResult.known ? 'Vous la connaissiez.' : 'À revoir : elle reviendra dans la séance.') + '</p>' +
+        '<p class="' + qc(rc.text) + '">«\u00A0' + esc(rc.text) + '\u00A0»</p>' + sourceHtml(rc, true, '') +
+        '<div class="idea"><span class="lab">Idée</span><p>' + esc(rc.idea) + '</p></div></div>' +
+        '<button class="next" data-act="r-next">' + (R.queue.length ? 'Suivante' : 'Terminer') + '</button></div>';
+      el.innerHTML = h; return;
+    }
+    var c = R.queue.length ? byId(R.queue[0]) : null;
+    if (!c) { el.innerHTML = h + doneView(R, 'again-all', '') + '</div>'; celebrate(R); return; }
+    h += '<h1>Réviser</h1>' + progress(R) +
+      '<div class="card" id="card-' + c.id + '">' + chipFor(c, R) +
+      '<p class="' + qc(c.text) + '">« ' + esc(c.text) + ' »</p>' + sourceHtml(c, R.revealed, 'reveal') + '</div>' +
+      '<div class="answers">' +
+      '<button class="no" data-act="no"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Je ne connais pas</button>' +
+      '<button class="yes" data-act="yes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Je connais</button>' +
+      '</div></div>';
+    el.innerHTML = h;
+  }
+
+  /* ---------- rendu : onglet Compléter ---------- */
+  function renderComplete() {
+    var el = $('#view-complete');
+    C.queue = C.queue.filter(function (id) { return byId(id); });
+    var h = '<div class="wrap">';
+    if (!cards.length) {
+      h += '<h1>Compléter</h1><div class="panel"><div class="empty"><p>Ajoutez d’abord des citations. Ici, on vous donne les 3 premiers mots et vous écrivez la suite.</p><button class="btn primary" data-go="add">Ajouter des citations</button></div></div></div>';
+      el.innerHTML = h; return;
+    }
+    if (cResult) {
+      var r = cResult, c = r.c;
+      h += '<h1>Compléter</h1>' + progress(C) +
+        '<div class="card">' + chipFor(c, C) +
+        '<p class="verdict ' + (r.known ? 'ok' : 'ko') + '" role="status">' + (r.known ? 'Vous connaissiez la suite.' : 'Voici la suite. Cette citation reviendra dans la séance.') + '</p>' +
+        '<p class="' + qc(c.text) + '">« <span class="head">' + esc(r.head.join(' ')) + '</span> ' + esc(r.rest.join(' ')) + ' »</p>' +
+        sourceHtml(c, true, '') + '</div>' +
+        '<button class="next" data-act="c-next">' + (C.queue.length ? 'Suivante' : 'Terminer') + '</button></div>';
+      el.innerHTML = h; return;
+    }
+    var cur = C.queue.length ? byId(C.queue[0]) : null;
+    if (!cur) { el.innerHTML = h + doneView(C, 'c-again-all', 'Aucune citation n’a plus de 3 mots. Il faut au moins 4 mots pour écrire une suite.') + '</div>'; celebrate(C); return; }
+    var toks = cur.text.split(/\s+/);
+    h += '<h1>Compléter</h1>' + progress(C) +
+      '<div class="card">' + chipFor(cur, C) +
+      '<p class="quote">« <span class="head">' + esc(toks.slice(0, 3).join(' ')) + '</span> <span class="dots">…</span></p>' +
+      sourceHtml(cur, true, '') + '</div>' +
+      '<div class="answers">' +
+      '<button class="no" data-act="c-no">Je ne connais pas la suite</button>' +
+      '<button class="yes" data-act="c-yes">Je connais la suite</button></div></div>';
+    el.innerHTML = h;
+  }
+
+  function renderCredits() {
+    $('#view-credits').innerHTML = '<div class="wrap"><h1>Crédits</h1>' +
+      '<div class="panel credits"><span class="lab">Application créée par</span><p class="who">Arthur Quersin</p>' +
+      '<a class="btn primary linkbtn" href="https://github.com/Rathureq" rel="noopener">github.com/Rathureq</a></div>' +
+      '<button class="btn" data-go="' + lastTab + '">Retour</button></div>';
+  }
+
+  var views = { add: 'view-add', review: 'view-review', complete: 'view-complete', credits: 'view-credits' };
+  var lastTab = 'complete';
+  function showTab(t) {
+    if (t !== 'credits') lastTab = t;
+    Object.keys(views).forEach(function (k) {
+      $('#' + views[k]).hidden = k !== t;
+      var tb = $('#tab-' + k);
+      if (tb) tb.setAttribute('aria-selected', k === t);
+    });
+    if (t === 'review') { if (!R.started) startSession(R, false); renderReview(); }
+    else if (t === 'complete') { if (!C.started) startSession(C, false); renderComplete(); }
+    else if (t === 'credits') { renderCredits(); }
+    else { confirming = null; renderAdd(); }
+    $('#btn-credits').setAttribute('aria-pressed', t === 'credits');
+    renderGauge(); window.scrollTo(0, 0);
+  }
+
+  document.addEventListener('click', function (e) {
+    var go = e.target.closest('[data-go]');
+    if (go) { showTab(go.getAttribute('data-go')); return; }
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var a = b.getAttribute('data-act');
+    if (a === 'yes') answerReview(true);
+    else if (a === 'no') answerReview(false);
+    else if (a === 'reveal') { R.revealed = true; renderReview(); }
+    else if (a === 'r-next') { rResult = null; R.revealed = false; renderReview(); }
+    else if (a === 'again-all') { startSession(R, true); rResult = null; renderReview(); }
+    else if (a === 'c-yes') answerComplete(true);
+    else if (a === 'c-no') answerComplete(false);
+    else if (a === 'c-next') { cResult = null; C.revealed = false; renderComplete(); }
+    else if (a === 'c-again-all') { startSession(C, true); cResult = null; renderComplete(); }
+    else if (a === 'preset') { var pr = PRESETS[+b.getAttribute('data-i')]; if (pr) { $('#mAuthor').value = pr[0]; $('#mWork').value = pr[1]; } }
+    else if (a === 'del') {
+      var id = b.getAttribute('data-id');
+      cards = cards.filter(function (c) { return c.id !== id; });
+      R.queue = R.queue.filter(function (q) { return q !== id; });
+      C.queue = C.queue.filter(function (q) { return q !== id; });
+      if (cResult && cResult.c.id === id) cResult = null;
+      if (rResult && rResult.c.id === id) rResult = null;
+      save(); renderAdd();
+    }
+    else if (a === 'reset' || a === 'wipe') { confirming = a; renderDanger(); }
+    else if (a === 'cancel') { confirming = null; renderDanger(); }
+    else if (a === 'reset-ok') {
+      cards.forEach(function (c) { c.box = 0; c.due = 0; c.seen = false; c.cbox = 0; c.cdue = 0; c.cseen = false; });
+      confirming = null; save(); R.started = false; C.started = false; cResult = null; rResult = null;
+      setMsg('Progression remise à zéro.', 'ok'); renderAdd();
+    }
+    else if (a === 'wipe-ok') { cards = []; R.queue = []; C.queue = []; confirming = null; save(); R.started = false; C.started = false; cResult = null; rResult = null; setMsg('', ''); renderAdd(); }
+  });
+
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) renderGauge(); });
+
+  $('#presets').innerHTML = PRESETS.map(function (x, i) {
+    return '<button type="button" class="preset" data-act="preset" data-i="' + i + '">' + esc(x[0]) + ' · ' + esc(x[1]) + '</button>';
+  }).join('');
+
+  load();
+  showTab(cards.length ? 'complete' : 'add');
+})();
+</script>
+</body>
+</html>

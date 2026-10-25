@@ -1,0 +1,6 @@
+<resources>
+    <color name="bg">#151D33</color>
+    <color name="surface">#1F2A47</color>
+    <color name="ic_bg">#345995</color>
+    <color name="ic_fg">#FFFFFF</color>
+</resources>
